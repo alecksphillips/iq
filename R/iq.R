@@ -196,7 +196,7 @@ plot_protein <- function(X, main = "", col = NULL, split = 0.6, ...) {
     invisible(NULL)
 }
 
-maxLFQ <- function(X) {
+maxLFQ <- function(X, stabilizeLargeRatios = F) {
 
     if (all(is.na(X))) {
         return(list(estimate = NA, annotation = "NA"))
@@ -223,8 +223,13 @@ maxLFQ <- function(X) {
             }
         }
     }
+    
+    logsumexp <- function(x, na.rm = F) {
+        x_star <- max(x, na.rm = na.rm)
+        x_star + log(sum(exp(x - x_star), na.rm = na.rm))
+    }
 
-    maxLFQ.do <- function(X) {
+    maxLFQ.do <- function(X, stabilizeLargeRatios = F) {
 
         N <- ncol(X)
 
@@ -235,6 +240,24 @@ maxLFQ <- function(X) {
             for (j in (i+1):N) {
 
                 r_i_j <- median(-X[,i] + X[,j], na.rm = TRUE)
+                
+                if (stabilizeLargeRatios) {
+                    mostFeatures <- max(colSums(!is.na(X[,c(i,j)])))
+                    nCommonFeatures <- sum(!is.na(X[,i]) & !is.na(X[,j]))
+                    featureRatio <- mostFeatures/nCommonFeatures
+                    
+                    sumOfIntensitiesRatio <- logsumexp(X[,j], na.rm = T) - logsumexp(X[,i], na.rm = T)
+                    
+                    if (featureRatio < 2.5) {
+                        r_i_j <- r_i_j
+                    } else if (featureRatio > 5) {
+                        r_i_j <- sumOfIntensitiesRatio
+                    } else {
+                        weight <- (featureRatio - 2.5)/2.5
+                        r_i_j <- exp(weight * sumOfIntensitiesRatio + (1-weight) * r_i_j)
+                    }
+                }
+                
 
                 if (!is.na(r_i_j)) {
 
@@ -270,7 +293,7 @@ maxLFQ <- function(X) {
         if (sum(ind) == 1) {
             w[ind] <- median(X[, ind], na.rm = TRUE)
         } else {
-            w[ind] <- maxLFQ.do(X[, ind])
+            w[ind] <- maxLFQ.do(X[, ind], stabilizeLargeRatios = stabilizeLargeRatios)
         }
     }
 
